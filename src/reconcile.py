@@ -29,6 +29,7 @@ async def reconcile_file(
         "files": payload.get("files", []),
         "chunk_count": payload["chunk_count"],
         "indexed_count": payload["indexed_count"],
+        "force_unlock": True,
     }
     response = await client.post(
         f"{api_url}/v1/ops/sources/{source_id}/adopt-snapshot",
