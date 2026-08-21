@@ -42,4 +42,4 @@ ENV HF_HOME=/models/huggingface
 ENV FASTEMBED_CACHE_PATH=/models/fastembed
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "-m", "src.ingest"]
+CMD ["python", "-m", "src.ingest"]
