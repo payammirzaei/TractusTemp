@@ -66,7 +66,6 @@ async def preflight(config: Config, qdrant: AsyncQdrantClient) -> None:
     log("[preflight] checking Qdrant")
     await qdrant.get_collections()
     log(f"[preflight] Qdrant OK: {config.qdrant_url}")
-
     log(
         "[preflight] dense="
         f"{config.dense_model} devices={list(config.gpu_device_ids)} "
@@ -75,90 +74,33 @@ async def preflight(config: Config, qdrant: AsyncQdrantClient) -> None:
     log(f"[preflight] sparse={config.sparse_model} batch={config.sparse_batch_size}")
 
 
-async def ingest_source(
-    *,
-    source,
-    pipeline: SourceIngestionPipeline,
-    retrieval: HybridRetrievalService,
-    config: Config,
-) -> dict[str, object]:
+async def ingest_source(*, source, pipeline: SourceIngestionPipeline, retrieval: HybridRetrievalService, config: Config) -> dict[str, object]:
     started = time.perf_counter()
     log(f"\n[{source.id}] discovering {source.full_name}@{source.ref}")
     manifest = await pipeline.discover(source)
-
     previous = load_marker(source.id)
-    if (
-        config.skip_completed
-        and previous
-        and previous.get("status") == "succeeded"
-        and previous.get("snapshot_commit_sha") == manifest.commit_sha
-    ):
+    if config.skip_completed and previous and previous.get("status") == "succeeded" and previous.get("snapshot_commit_sha") == manifest.commit_sha:
         log(f"[{source.id}] already complete at {manifest.commit_sha[:12]} — skipping")
         return previous
-
-    save_marker(
-        source.id,
-        {
-            "status": "running",
-            "source_id": source.id,
-            "repository": manifest.repository,
-            "version_ref": manifest.requested_ref,
-            "snapshot_commit_sha": manifest.commit_sha,
-            "discovered_count": len(manifest.files),
-            "started_at_unix": time.time(),
-        },
-    )
-
+    save_marker(source.id, {"status": "running", "source_id": source.id, "repository": manifest.repository, "version_ref": manifest.requested_ref, "snapshot_commit_sha": manifest.commit_sha, "discovered_count": len(manifest.files), "started_at_unix": time.time()})
     log(f"[{source.id}] fetching {len(manifest.files)} files")
     documents = await pipeline.fetch_files(manifest, manifest.files)
     log(f"[{source.id}] fetched {len(documents)} documents; chunking")
-
     chunks = SmartChunker().chunk_many(documents)
     total = len(chunks)
     log(f"[{source.id}] produced {total:,} chunks; indexing")
-
     last_reported = 0
-
     async def report(indexed: int) -> None:
         nonlocal last_reported
         if indexed == total or indexed - last_reported >= config.gpu_batch_size:
             elapsed = max(time.perf_counter() - started, 0.001)
             rate = indexed / elapsed
             pct = (indexed / total * 100.0) if total else 100.0
-            log(
-                f"[{source.id}] {indexed:,}/{total:,} indexed "
-                f"({pct:5.1f}%) @ {rate:,.1f} chunks/s"
-            )
+            log(f"[{source.id}] {indexed:,}/{total:,} indexed ({pct:5.1f}%) @ {rate:,.1f} chunks/s")
             last_reported = indexed
-
-    indexed = await retrieval.index(
-        chunks,
-        remove_stale_source_versions=True,
-        progress_callback=report,
-    )
-
+    indexed = await retrieval.index(chunks, remove_stale_source_versions=True, progress_callback=report)
     elapsed = time.perf_counter() - started
-    payload: dict[str, object] = {
-        "status": "succeeded",
-        "source_id": source.id,
-        "repository": manifest.repository,
-        "version_ref": manifest.requested_ref,
-        "snapshot_commit_sha": manifest.commit_sha,
-        "discovered_count": len(manifest.files),
-        "fetched_count": len(documents),
-        "chunk_count": total,
-        "indexed_count": indexed,
-        "elapsed_seconds": round(elapsed, 3),
-        "files": [
-            {
-                "path": item.path,
-                "blob_sha": item.sha,
-                "size_bytes": item.size,
-                "content_type": item.content_type,
-            }
-            for item in manifest.files
-        ],
-    }
+    payload: dict[str, object] = {"status": "succeeded", "source_id": source.id, "repository": manifest.repository, "version_ref": manifest.requested_ref, "snapshot_commit_sha": manifest.commit_sha, "discovered_count": len(manifest.files), "fetched_count": len(documents), "chunk_count": total, "indexed_count": indexed, "elapsed_seconds": round(elapsed, 3), "files": [{"path": item.path, "blob_sha": item.sha, "size_bytes": item.size, "content_type": item.content_type} for item in manifest.files]}
     save_marker(source.id, payload)
     log(f"[{source.id}] SUCCEEDED — {indexed:,} chunks in {elapsed / 60:.1f} min")
     return payload
@@ -168,32 +110,14 @@ async def main_async() -> int:
     clear_proxy_environment()
     config = Config.from_env()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-    dense = GpuDenseEmbeddingService(
-        config.dense_model,
-        batch_size=config.gpu_batch_size,
-        device_ids=config.gpu_device_ids,
-        parallel=config.gpu_parallel,
-    )
-    sparse = SparseEmbeddingService(
-        config.sparse_model,
-        batch_size=config.sparse_batch_size,
-    )
-    qdrant = AsyncQdrantClient(
-        url=config.qdrant_url,
-        api_key=config.qdrant_api_key,
-        timeout=180,
-        check_compatibility=False,
-    )
-    retrieval = HybridRetrievalService(
-        qdrant=qdrant,
-        collection_name=config.qdrant_collection,
-        dense_embedder=dense,
-        sparse_embedder=sparse,
-    )
-
+    dense = GpuDenseEmbeddingService(config.dense_model, batch_size=config.gpu_batch_size, device_ids=config.gpu_device_ids, parallel=config.gpu_parallel)
+    sparse = SparseEmbeddingService(config.sparse_model, batch_size=config.sparse_batch_size)
+    # qdrant-client forwards extra kwargs to its internal httpx client.  The
+    # host was verified to work with httpx only when trust_env=False, so force
+    # that exact transport behavior here instead of relying on proxy env state.
+    qdrant = AsyncQdrantClient(url=config.qdrant_url, api_key=config.qdrant_api_key, timeout=180, check_compatibility=False, trust_env=False)
+    retrieval = HybridRetrievalService(qdrant=qdrant, collection_name=config.qdrant_collection, dense_embedder=dense, sparse_embedder=sparse)
     await preflight(config, qdrant)
-
     registry = [source for source in load_source_registry(REGISTRY) if source.enabled]
     if config.source_ids:
         requested = set(config.source_ids)
@@ -201,58 +125,30 @@ async def main_async() -> int:
         missing = requested - {source.id for source in registry}
         if missing:
             raise RuntimeError(f"Unknown or disabled SOURCE_IDS: {sorted(missing)}")
-
     log(f"[start] selected {len(registry)} source(s): {', '.join(s.id for s in registry)}")
     failures: list[tuple[str, str]] = []
     results: list[dict[str, object]] = []
-
     try:
-        async with SourceIngestionPipeline(
-            token=config.github_token,
-            timeout=config.github_timeout_seconds,
-            concurrency=12,
-            max_attempts=config.github_max_attempts,
-            retry_base_seconds=1.0,
-            retry_max_seconds=30.0,
-            circuit_failure_threshold=5,
-            circuit_cooldown_seconds=60.0,
-        ) as pipeline:
+        async with SourceIngestionPipeline(token=config.github_token, timeout=config.github_timeout_seconds, concurrency=12, max_attempts=config.github_max_attempts, retry_base_seconds=1.0, retry_max_seconds=30.0, circuit_failure_threshold=5, circuit_cooldown_seconds=60.0) as pipeline:
             for source in registry:
                 try:
-                    result = await ingest_source(
-                        source=source,
-                        pipeline=pipeline,
-                        retrieval=retrieval,
-                        config=config,
-                    )
+                    result = await ingest_source(source=source, pipeline=pipeline, retrieval=retrieval, config=config)
                     results.append(result)
-                except Exception as exc:  # noqa: BLE001 - one source must not kill the batch
+                except Exception as exc:
                     message = f"{type(exc).__name__}: {exc}"
                     failures.append((source.id, message))
-                    save_marker(
-                        source.id,
-                        {
-                            "status": "failed",
-                            "source_id": source.id,
-                            "error": message,
-                            "finished_at_unix": time.time(),
-                        },
-                    )
+                    save_marker(source.id, {"status": "failed", "source_id": source.id, "error": message, "finished_at_unix": time.time()})
                     log(f"[{source.id}] FAILED — {message}")
                     if config.fail_fast:
                         raise
     finally:
         await qdrant.close()
-
     succeeded = sum(item.get("status") == "succeeded" for item in results)
     log("\n================ BULK INGEST SUMMARY ================")
     log(f"Succeeded: {succeeded}/{len(registry)}")
     for item in results:
         if item.get("status") == "succeeded":
-            log(
-                f"  ✓ {item['source_id']}: "
-                f"{int(item.get('indexed_count', 0)):,} chunks"
-            )
+            log(f"  ✓ {item['source_id']}: {int(item.get('indexed_count', 0)):,} chunks")
     for source_id, error in failures:
         log(f"  ✗ {source_id}: {error}")
     log("=====================================================")
