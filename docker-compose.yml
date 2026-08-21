@@ -1,0 +1,15 @@
+services:
+  bulk-ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TRACTUSMIND_REF: ac9b0607117adb5c7c559824c5178b6d03e7caed
+    env_file:
+      - .env
+    gpus: all
+    shm_size: "8gb"
+    volumes:
+      - ./.model-cache:/models
+      - ./state:/state
+    restart: "no"
