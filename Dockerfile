@@ -24,6 +24,7 @@ RUN git clone https://github.com/payammirzaei/TractusMind.git /opt/tractusmind \
 RUN pip install \
     "fastembed-gpu>=0.7,<1.0" \
     "qdrant-client>=1.18,<2.0" \
+    "fastapi>=0.115,<1.0" \
     "pydantic>=2.9,<3.0" \
     "pydantic-settings>=2.6,<3.0" \
     "httpx>=0.27,<1.0" \
@@ -31,8 +32,10 @@ RUN pip install \
     "tree-sitter>=0.26,<0.27" \
     "tree-sitter-language-pack>=1.14.1,<2.0" \
     "prometheus-client>=0.25,<1.0" \
-    "opentelemetry-api>=1.27,<2.0" \
-    "opentelemetry-sdk>=1.27,<2.0" \
+    "opentelemetry-api>=1.44,<1.45" \
+    "opentelemetry-sdk>=1.44,<1.45" \
+    "opentelemetry-exporter-otlp-proto-http>=1.44,<1.45" \
+    "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66" \
     "msgpack>=1.2.1,<2.0"
 
 WORKDIR /workspace
