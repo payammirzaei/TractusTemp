@@ -31,6 +31,8 @@ RUN pip install \
     "tree-sitter>=0.26,<0.27" \
     "tree-sitter-language-pack>=1.14.1,<2.0" \
     "prometheus-client>=0.25,<1.0" \
+    "opentelemetry-api>=1.27,<2.0" \
+    "opentelemetry-sdk>=1.27,<2.0" \
     "msgpack>=1.2.1,<2.0"
 
 WORKDIR /workspace
