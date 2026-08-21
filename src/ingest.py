@@ -134,8 +134,6 @@ async def ingest_source(
         "chunk_count": total,
         "indexed_count": indexed,
         "elapsed_seconds": round(elapsed, 3),
-        # This bundle is sufficient for a later TractusMind DB-state reconciliation
-        # without downloading or embedding the source again.
         "files": [
             {
                 "path": item.path,
@@ -169,6 +167,8 @@ async def main_async() -> int:
         url=config.qdrant_url,
         api_key=config.qdrant_api_key,
         timeout=180,
+        check_compatibility=False,
+        trust_env=False,
     )
     retrieval = HybridRetrievalService(
         qdrant=qdrant,
