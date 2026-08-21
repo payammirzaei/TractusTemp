@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,10 +20,24 @@ from src.gpu import GpuDenseEmbeddingService
 
 REGISTRY = Path("/opt/tractusmind/config/sources.toml")
 STATE_DIR = Path("/state")
+_PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
 
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+def clear_proxy_environment() -> None:
+    removed = [name for name in _PROXY_ENV_VARS if os.environ.pop(name, None) is not None]
+    if removed:
+        log(f"[network] ignored proxy environment: {', '.join(removed)}")
 
 
 def marker_path(source_id: str) -> Path:
@@ -150,6 +165,7 @@ async def ingest_source(
 
 
 async def main_async() -> int:
+    clear_proxy_environment()
     config = Config.from_env()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -168,7 +184,6 @@ async def main_async() -> int:
         api_key=config.qdrant_api_key,
         timeout=180,
         check_compatibility=False,
-        trust_env=False,
     )
     retrieval = HybridRetrievalService(
         qdrant=qdrant,
