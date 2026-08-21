@@ -7,6 +7,15 @@ services:
         TRACTUSMIND_REF: fc53778908d6e8bb7d30059f719a67e61b5450f0
     env_file:
       - .env
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"
     gpus: all
     shm_size: "8gb"
     volumes:
