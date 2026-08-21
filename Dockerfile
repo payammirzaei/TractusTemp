@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TRACTUSMIND_REF=fc53778908d6e8bb7d30059f719a67e61b5450f0
@@ -13,9 +13,6 @@ ENV PATH=/opt/venv/bin:$PATH
 
 RUN pip install --upgrade pip setuptools wheel
 
-# Pull the exact TractusMind revision whose chunking, payload and collection
-# conventions match production. Install the package without its CPU FastEmbed extra;
-# this image intentionally supplies fastembed-gpu instead.
 RUN git clone https://github.com/payammirzaei/TractusMind.git /opt/tractusmind \
     && cd /opt/tractusmind \
     && git checkout "${TRACTUSMIND_REF}" \
