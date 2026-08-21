@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -21,14 +20,7 @@ from src.gpu import GpuDenseEmbeddingService
 
 REGISTRY = Path("/opt/tractusmind/config/sources.toml")
 STATE_DIR = Path("/state")
-_PROXY_ENV_VARS = (
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "all_proxy",
-)
+_PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def log(message: str) -> None:
@@ -42,8 +34,11 @@ def clear_proxy_environment() -> None:
 
 
 async def force_direct_qdrant_transport(qdrant: AsyncQdrantClient) -> None:
-    """Replace qdrant-client's internal HTTPX transport with a verified direct client."""
-    api_client = qdrant._client.http.api_client  # noqa: SLF001 - intentional one-shot workaround
+    """Patch the generated async REST ApiClient actually used by qdrant-client."""
+    # qdrant._client is AsyncQdrantRemote. Its generated REST stack is:
+    #   _client.http -> AsyncApis -> collections_api -> AsyncCollectionsApi -> api_client
+    # All generated APIs share the same ApiClient instance.
+    api_client = qdrant._client.http.collections_api.api_client  # noqa: SLF001
     old_client = api_client._async_client  # noqa: SLF001
     api_client._async_client = httpx.AsyncClient(  # noqa: SLF001
         trust_env=False,
@@ -54,7 +49,7 @@ async def force_direct_qdrant_transport(qdrant: AsyncQdrantClient) -> None:
         await old_client.aclose()
     except Exception:
         pass
-    log("[network] qdrant transport forced to direct httpx trust_env=False")
+    log("[network] qdrant REST transport forced to direct httpx trust_env=False")
 
 
 def marker_path(source_id: str) -> Path:
@@ -83,11 +78,7 @@ async def preflight(config: Config, qdrant: AsyncQdrantClient) -> None:
     log("[preflight] checking Qdrant")
     await qdrant.get_collections()
     log(f"[preflight] Qdrant OK: {config.qdrant_url}")
-    log(
-        "[preflight] dense="
-        f"{config.dense_model} devices={list(config.gpu_device_ids)} "
-        f"parallel={config.gpu_parallel} batch={config.gpu_batch_size}"
-    )
+    log(f"[preflight] dense={config.dense_model} devices={list(config.gpu_device_ids)} parallel={config.gpu_parallel} batch={config.gpu_batch_size}")
     log(f"[preflight] sparse={config.sparse_model} batch={config.sparse_batch_size}")
 
 
@@ -107,6 +98,7 @@ async def ingest_source(*, source, pipeline: SourceIngestionPipeline, retrieval:
     total = len(chunks)
     log(f"[{source.id}] produced {total:,} chunks; indexing")
     last_reported = 0
+
     async def report(indexed: int) -> None:
         nonlocal last_reported
         if indexed == total or indexed - last_reported >= config.gpu_batch_size:
@@ -115,6 +107,7 @@ async def ingest_source(*, source, pipeline: SourceIngestionPipeline, retrieval:
             pct = (indexed / total * 100.0) if total else 100.0
             log(f"[{source.id}] {indexed:,}/{total:,} indexed ({pct:5.1f}%) @ {rate:,.1f} chunks/s")
             last_reported = indexed
+
     indexed = await retrieval.index(chunks, remove_stale_source_versions=True, progress_callback=report)
     elapsed = time.perf_counter() - started
     payload: dict[str, object] = {"status": "succeeded", "source_id": source.id, "repository": manifest.repository, "version_ref": manifest.requested_ref, "snapshot_commit_sha": manifest.commit_sha, "discovered_count": len(manifest.files), "fetched_count": len(documents), "chunk_count": total, "indexed_count": indexed, "elapsed_seconds": round(elapsed, 3), "files": [{"path": item.path, "blob_sha": item.sha, "size_bytes": item.size, "content_type": item.content_type} for item in manifest.files]}
