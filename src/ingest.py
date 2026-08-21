@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+import httpx
 from qdrant_client import AsyncQdrantClient
 
 from app.chunking import SmartChunker
@@ -38,6 +39,22 @@ def clear_proxy_environment() -> None:
     removed = [name for name in _PROXY_ENV_VARS if os.environ.pop(name, None) is not None]
     if removed:
         log(f"[network] ignored proxy environment: {', '.join(removed)}")
+
+
+async def force_direct_qdrant_transport(qdrant: AsyncQdrantClient) -> None:
+    """Replace qdrant-client's internal HTTPX transport with a verified direct client."""
+    api_client = qdrant._client.http.api_client  # noqa: SLF001 - intentional one-shot workaround
+    old_client = api_client._async_client  # noqa: SLF001
+    api_client._async_client = httpx.AsyncClient(  # noqa: SLF001
+        trust_env=False,
+        timeout=httpx.Timeout(180.0),
+        follow_redirects=True,
+    )
+    try:
+        await old_client.aclose()
+    except Exception:
+        pass
+    log("[network] qdrant transport forced to direct httpx trust_env=False")
 
 
 def marker_path(source_id: str) -> Path:
@@ -112,10 +129,8 @@ async def main_async() -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     dense = GpuDenseEmbeddingService(config.dense_model, batch_size=config.gpu_batch_size, device_ids=config.gpu_device_ids, parallel=config.gpu_parallel)
     sparse = SparseEmbeddingService(config.sparse_model, batch_size=config.sparse_batch_size)
-    # qdrant-client forwards extra kwargs to its internal httpx client.  The
-    # host was verified to work with httpx only when trust_env=False, so force
-    # that exact transport behavior here instead of relying on proxy env state.
-    qdrant = AsyncQdrantClient(url=config.qdrant_url, api_key=config.qdrant_api_key, timeout=180, check_compatibility=False, trust_env=False)
+    qdrant = AsyncQdrantClient(url=config.qdrant_url, api_key=config.qdrant_api_key, timeout=180, check_compatibility=False)
+    await force_direct_qdrant_transport(qdrant)
     retrieval = HybridRetrievalService(qdrant=qdrant, collection_name=config.qdrant_collection, dense_embedder=dense, sparse_embedder=sparse)
     await preflight(config, qdrant)
     registry = [source for source in load_source_registry(REGISTRY) if source.enabled]
