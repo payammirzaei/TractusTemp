@@ -6,7 +6,6 @@ import os
 import time
 from pathlib import Path
 
-from app.chunking import SmartChunker
 from app.embeddings.sparse import SparseEmbeddingService
 from app.ingestion.pipeline import SourceIngestionPipeline
 from app.ingestion.registry import load_source_registry
@@ -15,6 +14,7 @@ from src.config import Config
 from src.gpu import GpuDenseEmbeddingService
 from src.local_git import LocalGitSourceLoader
 from src.rest_index import RestHybridIndexer
+from src.safe_chunker import SafeLineChunker
 
 REGISTRY = Path("/opt/tractusmind/config/sources.toml")
 STATE_DIR = Path("/state")
@@ -120,7 +120,13 @@ async def ingest_source(
         documents = await pipeline.fetch_files(manifest, manifest.files)
 
     log(f"[{source.id}] selected {len(manifest.files)} files; loaded {len(documents)} documents; chunking")
-    chunks = SmartChunker().chunk_many(documents)
+    if local_loader is not None:
+        log(f"[{source.id}] bootstrap chunker=safe-line (parser-free)")
+        chunks = SafeLineChunker().chunk_many(documents)
+    else:
+        from app.chunking import SmartChunker
+
+        chunks = SmartChunker().chunk_many(documents)
     total = len(chunks)
     log(f"[{source.id}] produced {total:,} chunks; indexing")
     last_reported = 0
