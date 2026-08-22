@@ -1,7 +1,7 @@
 FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TRACTUSMIND_REF=fc53778908d6e8bb7d30059f719a67e61b5450f0
+ARG TRACTUSMIND_REF=e8833e565a478cc64837289a96cf2e651620fa2d
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
