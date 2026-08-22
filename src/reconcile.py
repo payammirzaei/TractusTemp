@@ -22,6 +22,8 @@ async def reconcile_file(
     source_id = str(payload.get("source_id", path.stem))
     if payload.get("status") != "succeeded":
         return source_id, True, f"skipped local state={payload.get('status', 'unknown')}"
+    if payload.get("production_state") == "adopted" and payload.get("production_run_id"):
+        return source_id, True, "skipped already adopted"
 
     body = {
         "version_ref": payload["version_ref"],
