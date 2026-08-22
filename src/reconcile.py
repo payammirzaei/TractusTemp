@@ -21,7 +21,7 @@ async def reconcile_file(
     payload = json.loads(path.read_text(encoding="utf-8"))
     source_id = str(payload.get("source_id", path.stem))
     if payload.get("status") != "succeeded":
-        return source_id, False, "local state is not succeeded"
+        return source_id, True, f"skipped local state={payload.get('status', 'unknown')}"
 
     body = {
         "version_ref": payload["version_ref"],
@@ -72,7 +72,8 @@ async def main_async() -> int:
                 path=path,
             )
             if ok:
-                print(f"[reconcile] ✓ {source_id}: {message}", flush=True)
+                marker = "↷" if message.startswith("skipped") else "✓"
+                print(f"[reconcile] {marker} {source_id}: {message}", flush=True)
             else:
                 failures += 1
                 print(f"[reconcile] ✗ {source_id}: {message}", flush=True)
