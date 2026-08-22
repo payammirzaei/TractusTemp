@@ -21,8 +21,12 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-if ! grep -Eq '^GITHUB_TOKEN=.+$' .env; then
-  echo "ERROR: GITHUB_TOKEN is empty in .env" >&2
+LOCAL_MODE=true
+if grep -Eq '^LOCAL_GIT_BOOTSTRAP=(false|0|no|off)$' .env; then
+  LOCAL_MODE=false
+fi
+if [[ "$LOCAL_MODE" == "false" ]] && ! grep -Eq '^GITHUB_TOKEN=.+$' .env; then
+  echo "ERROR: GITHUB_TOKEN is required when LOCAL_GIT_BOOTSTRAP=false" >&2
   exit 1
 fi
 
@@ -40,4 +44,5 @@ docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 \
   nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
 
 echo
+echo "Source loader: $([[ "$LOCAL_MODE" == "true" ]] && echo 'local shallow git cache' || echo 'GitHub API')"
 echo "Preflight OK"
