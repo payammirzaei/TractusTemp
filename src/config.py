@@ -32,15 +32,19 @@ class Config:
     source_ids: tuple[str, ...]
     skip_completed: bool
     fail_fast: bool
+    local_git_bootstrap: bool
+    repo_cache_dir: str
+    git_timeout_seconds: float
     github_timeout_seconds: float
     github_max_attempts: int
 
     @classmethod
     def from_env(cls) -> "Config":
+        local_git_bootstrap = _bool("LOCAL_GIT_BOOTSTRAP", True)
         github_token = os.getenv("GITHUB_TOKEN", "").strip()
         qdrant_url = os.getenv("QDRANT_URL", "").strip()
-        if not github_token:
-            raise RuntimeError("GITHUB_TOKEN is required")
+        if not github_token and not local_git_bootstrap:
+            raise RuntimeError("GITHUB_TOKEN is required when LOCAL_GIT_BOOTSTRAP=false")
         if not qdrant_url:
             raise RuntimeError("QDRANT_URL is required")
 
@@ -75,6 +79,9 @@ class Config:
             source_ids=source_ids,
             skip_completed=_bool("SKIP_COMPLETED", True),
             fail_fast=_bool("FAIL_FAST", False),
+            local_git_bootstrap=local_git_bootstrap,
+            repo_cache_dir=os.getenv("REPO_CACHE_DIR", "/repo-cache"),
+            git_timeout_seconds=float(os.getenv("GIT_TIMEOUT_SECONDS", "900")),
             github_timeout_seconds=float(os.getenv("GITHUB_TIMEOUT_SECONDS", "60")),
             github_max_attempts=_int("GITHUB_MAX_ATTEMPTS", 6),
         )
