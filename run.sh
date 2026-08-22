@@ -6,8 +6,16 @@ chmod +x scripts/preflight.sh
 mkdir -p state .model-cache repo-cache
 
 echo
+echo "Restoring current production snapshot markers (safe after a full local delete)..."
+if grep -Eq '^TRACTUSMIND_API_URL=.+$' .env && grep -Eq '^TRACTUSMIND_ADMIN_KEY=.+$' .env; then
+  docker compose run --rm bulk-ingest python -m src.seed_production_state || true
+else
+  echo "Production credentials not configured; local-state seeding skipped."
+fi
+
+echo
 echo "Starting TractusMind organization-scale GPU bootstrap..."
-echo "Successful existing source markers will be skipped when upstream is unchanged."
+echo "Production-current and successful local sources will be skipped when upstream is unchanged."
 echo
 
 set +e
@@ -18,7 +26,7 @@ set -e
 RECONCILE_STATUS=0
 if grep -Eq '^TRACTUSMIND_API_URL=.+$' .env && grep -Eq '^TRACTUSMIND_ADMIN_KEY=.+$' .env; then
   echo
-  echo "Reconciling every successful snapshot into TractusMind production state..."
+  echo "Reconciling every newly successful snapshot into TractusMind production state..."
   docker compose run --rm bulk-ingest python -m src.reconcile || RECONCILE_STATUS=$?
 else
   echo
