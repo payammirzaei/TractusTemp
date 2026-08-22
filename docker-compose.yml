@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        TRACTUSMIND_REF: fc53778908d6e8bb7d30059f719a67e61b5450f0
+        TRACTUSMIND_REF: e8833e565a478cc64837289a96cf2e651620fa2d
     env_file:
       - .env
     environment:
@@ -21,4 +21,5 @@ services:
     volumes:
       - ./.model-cache:/models
       - ./state:/state
+      - ./repo-cache:/repo-cache
     restart: "no"
