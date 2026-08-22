@@ -1,5 +1,6 @@
 .env
 state/
 .model-cache/
+repo-cache/
 __pycache__/
 *.pyc
